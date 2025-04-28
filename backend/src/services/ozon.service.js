@@ -11,7 +11,6 @@ const skladHeaders = {
     headers: {
     Authorization : `Basic ${process.env.SkladAuthToken}`
 }}
-console.log(skladHeaders, ozonHeaders)
 export default class OzonService{
     static async getProducts(){
         const result = await Product.findAll({ where: { listed: true } })

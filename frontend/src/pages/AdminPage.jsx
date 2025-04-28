@@ -39,7 +39,6 @@ const AdminPage = () => {
         data: { userToDelete: id, force },
         withCredentials: true
       });
-      console.log('УДАЛИЛ')
       messageApi.success("Пользователь удален");
       fetchUsers();
     } catch (err) {
