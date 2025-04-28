@@ -3,6 +3,7 @@ import ApiError from '../utils/apiError.js';
 import logger from '../utils/logger.js'
 const ozonIps = ['195.34.21.0/24', '185.73.192.0/22', '91.223.93.0/24']
 const authMiddleware = async (req, res, next) => {
+    console.log(req.ip)
     if(ozonIps.includes(req.ip)){
         return next()
     }
