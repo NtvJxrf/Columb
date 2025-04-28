@@ -3,7 +3,7 @@ import Product from '../databases/models/ozon/product.model.js'
 
 const ozonHeaders = {
     headers: {
-        "Client-Id": process.env.Ozon_Client_ID,
+        "Client-Id": process.env.Ozon_Client_Id,
         "Api-Key": process.env.Ozon_Api_Key
     }
 }
