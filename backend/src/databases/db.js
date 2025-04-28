@@ -61,7 +61,7 @@ const initModels = async () => {
           role: 'admin'
         })
     }else{
-      await sequelize.sync()
+      await sequelize.sync({alter: true})
     }
     return models
   } catch (error) {
