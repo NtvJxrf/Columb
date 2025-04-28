@@ -16,10 +16,13 @@ const Product = sequelize.define('Product', {
         type: DataTypes.INTEGER,
         unique: true,
     },
+    sku:{
+        type: DataTypes.INTEGER,
+        unique: true
+    },
     name: {
         type: DataTypes.STRING,
-        allowNull: false,
-        unique: true,
+        allowNull: false
     },
     assortmentId: {
         type: DataTypes.STRING,
@@ -37,10 +40,6 @@ const Product = sequelize.define('Product', {
     listed: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
-    },
-    skladPrice: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
     }
 },{
     tableName: 'products',

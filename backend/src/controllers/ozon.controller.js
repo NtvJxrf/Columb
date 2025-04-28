@@ -27,8 +27,8 @@ export default class OzonController{
         res.sendStatus(500)
     }
     static ozonHook(req, res){
-        const { message_type } = req.data
-        this[message_type](req, res)
+        const { message_type } = req.body
+        OzonController[message_type](req, res)
     }
     static TYPE_PING(req, res){
         res.status(200).json({
@@ -38,10 +38,12 @@ export default class OzonController{
         })
     }
     static async TYPE_NEW_POSTING(req, res){
-        
+        const result = await OzonService.newPosting(req.body)
+        res.sendStatus(200)
     }
     static async TYPE_POSTING_CANCELLED(req, res){
-
+        const result = await OzonService.postingCancelled(req.body)
+        res.sendStatus(200)
     }
     static async deleteProducts(){
 
