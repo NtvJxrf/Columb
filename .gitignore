@@ -4,6 +4,7 @@ frontend/node_modules/
 *.log
 .env
 test.js
+create-user.js
 # Build
 frontend/build/
 backend/dist/
