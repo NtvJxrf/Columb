@@ -30,7 +30,7 @@ app.use(cors({
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
-app.set('trust proxy', true);
+app.set('trust proxy', 'loopback');
 app.use('/', routes)
 // Error handling
 app.use(errorConverter)
