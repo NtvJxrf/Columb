@@ -1,6 +1,6 @@
 import express from "express"
 import OzonController from '../../controllers/ozon.controller.js'
-
+import adminRouteMiddleware from "../../middlewares/adminRoute.middleware.js"
 const router = express.Router()
 //api/ozon
 router
@@ -17,7 +17,10 @@ router
     .get(OzonController.syncAllProduct)
 router
     .route('/nullAll')
-    .get(OzonController.nullAll)
+    .get(adminRouteMiddleware, OzonController.nullAll)
+router
+    .route('/updateAll')
+    .get(OzonController.updateAll)
 router
     .route('/')
     .post(OzonController.ozonHook)

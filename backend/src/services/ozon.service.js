@@ -1,5 +1,6 @@
 import axios from "axios";
 import Product from '../databases/models/ozon/product.model.js'
+import logger from "../utils/logger.js";
 const ozonHeaders = {
     headers: {
         "Client-Id": process.env.Ozon_Client_Id,
@@ -150,8 +151,88 @@ export default class OzonService{
         args.positions = await getPositions(data)
         const response = await axios.post(`https://api.moysklad.ru/api/remap/1.2/entity/enter`, args, skladHeaders)
     }
-    static async nullAll(){
+    static async nullAllStock() {
+        const warehouseId = 23524151071000;
+        const products = await Product.findAll({
+            where: { listed: true },
+            attributes: ['productId']
+        });
+        await Product.update({ updateIt: false }, { where: { listed: true } })
+        const allStocks = products.map(el => ({
+            product_id: el.productId,
+            quant_size: 1,
+            stock: 0,
+            warehouse_id: warehouseId
+        }));
+    
+        const chunkSize = 95;
+        for (let i = 0; i < allStocks.length; i += chunkSize) {
+            const chunk = allStocks.slice(i, i + chunkSize);
+            try {
+                const response = await axios.post(
+                    `https://api-seller.ozon.ru/v2/products/stocks`,
+                    { stocks: chunk },
+                    ozonHeaders
+                );
 
+            } catch (err) {
+                logger.error('Ошибка при обнулении остатков', err.message)
+            }
+    
+            if (i + chunkSize < allStocks.length) {
+                await new Promise(resolve => setTimeout(resolve, 30_000));
+            }
+        }
+    }
+    static async updateAllStock(){
+        console.time('up')
+        const warehouseId = 23524151071000;
+        const products = await Product.findAll({
+            where: { listed: true, updateIt: true },
+            attributes: ['productId', 'assortmentId', 'type'],
+            include: [{
+                    model: Product,
+                    as: 'Components',
+                    through: { attributes: ['quantity'] }
+                }]
+        });
+        const stock = await axios.get(`https://api.moysklad.ru/api/remap/1.2/report/stock/all/current?include=zeroLines`, skladHeaders)
+        const stockMap = new Map()
+        stock.data.forEach(el => stockMap.set(el.assortmentId, el.stock))
+        const allStocks = products.map(el => {
+            let stock = Math.max(stockMap.get(el.assortmentId) || 0, 0)
+            if(el.type === 'bundle'){
+                const temp = []
+                el.Components.forEach( i => temp.push(Math.max((stockMap.get(i.assortmentId) || 0) / i.ProductComponents.quantity, 0)))
+                console.log(temp)
+                stock = Math.floor(Math.min(...temp))
+
+            }
+            return {
+                product_id: el.productId,
+                quant_size: 1,
+                stock,
+                warehouse_id: warehouseId
+            }
+        });
+        const chunkSize = 95;
+        for (let i = 0; i < allStocks.length; i += chunkSize) {
+            const chunk = allStocks.slice(i, i + chunkSize);
+            try {
+                const response = await axios.post(
+                    `https://api-seller.ozon.ru/v2/products/stocks`,
+                    { stocks: chunk },
+                    ozonHeaders
+                );
+            } catch (err) {
+                logger.error('Ошибка при обнулении остатков', err.message)
+            }
+    
+            if (i + chunkSize < allStocks.length) {
+                await new Promise(resolve => setTimeout(resolve, 30_000));
+            }
+        }
+        console.timeEnd('up')
     }
     static async deleteProducts(code){
 

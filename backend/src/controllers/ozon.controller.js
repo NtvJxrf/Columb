@@ -21,10 +21,12 @@ export default class OzonController{
         res.sendStatus(500)
     }
     static async nullAll(req, res){
-        const result = await OzonService.nullAll()
-        if(result)
-            return res.sendStatus(200)
-        res.sendStatus(500)
+        const result = await OzonService.nullAllStock()
+        return res.sendStatus(200)
+    }
+    static async updateAll(req, res){
+        const result = await OzonService.updateAllStock()
+        return res.sendStatus(200)
     }
     static ozonHook(req, res){
         const { message_type } = req.body
