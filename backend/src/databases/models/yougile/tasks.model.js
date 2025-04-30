@@ -12,8 +12,8 @@ const Tasks = sequelize.define('Task', {
         allowNull: false,
         unique: true,
     },
-    yougileId: {
-        type: DataTypes.INTEGER,
+    yougileId: {//id основной задачи в yougile
+        type: DataTypes.STRING,
         allowNull: false,
         unique: true,
     },

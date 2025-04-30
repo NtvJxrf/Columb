@@ -3,8 +3,10 @@ export default class MoySkladController{
     static async createHook(req, res){
         const id = req.query.id
         const result = await SkladService.createHook(id)
+        res.sendStatus(200)
     }
     static async updateHook(req, res){
-        
+        const result = await SkladService.updateHook(req.body)
+        res.sendStatus(200)
     }
 }

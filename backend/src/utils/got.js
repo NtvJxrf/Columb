@@ -10,6 +10,14 @@ const gotClient = got.extend({
     throwHttpErrors: false,
 });
 
+
+let yougileRequestCount = 0;
+const YOUGILE_LIMIT = 50;
+
+let mouskladRequestCount = 0;
+const MOYSKLAD_LIMIT = 45;
+
+
 class Client {
     static async request(url, type, args, service) {
         const response = await gotClient[type](url, args);
@@ -27,6 +35,13 @@ class Client {
             },
             json: data || undefined,
         };
+        while (mouskladRequestCount >= MOYSKLAD_LIMIT) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        mouskladRequestCount++
+        setTimeout(() => {
+            mouskladRequestCount--
+        }, 3_000)
         return this.request(url, type, args, 'MoySklad');
     }
 
@@ -42,7 +57,14 @@ class Client {
     }
 
     static async yougile(url, type = 'get', args) {
-        return this.request(url, type, args, 'YouGile');
+        while (yougileRequestCount >= YOUGILE_LIMIT) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        yougileRequestCount++
+        setTimeout(() => {
+            yougileRequestCount--
+        }, 60_000)
+        return this.request(url, type, args, 'YouGile')
     }
 }
 

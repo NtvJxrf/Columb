@@ -190,7 +190,10 @@ export default class OzonService{
                 }
             }
         
-        } finally {
+        } catch (err) {
+            logger.error('Ошибка при общем обнулении остатков', err);
+            throw err;
+        }finally {
             isUpgrading = false
         }
         return true
@@ -242,6 +245,9 @@ export default class OzonService{
                     await new Promise(resolve => setTimeout(resolve, 30_000));
                 }
             }
+        }catch (err) {
+            logger.error('Ошибка при общем обновлении остатков', err);
+            throw err;
         }finally{
             isUpgrading = false
         }

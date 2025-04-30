@@ -1,45 +1,142 @@
-import axios from 'axios'
 import Client from '../utils/got.js'
-const skladHeaders = { 
-    headers: {
-    Authorization : `Basic ${process.env.SkladAuthToken}`
-}}
-const yougileHeaders = {
-      headers: {
-        "Authorization" : `Bearer ${process.env.SkladAuthToken}`
-      }
-}
+import Tasks from '../databases/models/yougile/tasks.model.js';
+import { json } from 'sequelize';
+import { text } from 'express';
 export default class SkladService{
-   static async createHook(id){
-        const createdOrder = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`)
-        const yougileBody = {
-            title: `${createdOrder?.project?.name || 'Без номера'}, ${new Date(new Date(createdOrder.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${createdOrder?.attributes.find(el => el.name == 'Название')?.value || 'Без названия'}`,
-            description: `${createdOrder.description || 'Без описания'}<br><br><br>ФИО: ${createdOrder.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${createdOrder.agent?.phone || 'Без номера телефона'}">${createdOrder.agent.phone}</a>`,
-            stopwatch: { running: true },
-            stickers: {},
-            columnId: '900fba52-90fd-40c0-8305-f00940882239',
-            idTaskCommon: createdOrder.id,
-            checklists: [{   title: 'Позиции',
-                            items: createdOrder.positions.rows.map(position => {
-                                return {title: `${position.assortment.name} ${position.quantity}шт`, isCompleted: false
-                                }
-                            })
-            }]
-        }
-        createdOrder.deliveryPlannedMoment && (yougileBody.deadline ={ deadline: Math.round(new Date(createdOrder?.deliveryPlannedMoment).getTime())})
-        switchAttributes(yougileBody, createdOrder.attributes)
-        const taskId = await Client.yougile(`https://ru.yougile.com/api-v2/tasks`,'post', {
+  static async createHook(id) {
+    console.log('создаю заказик')
+    const createdOrder = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`);
+    let type = null
+    if(createdOrder.state.name != 'ремонт' && createdOrder.state.name != 'изготовление')
+      return
+    type = createdOrder.state.name === 'ремонт' ? 'repair' : 'neworder'
+    const taskId = await createOrder(createdOrder, type)
+    await Tasks.create({
+      skladId: id,
+      yougileId: taskId
+    })
+    return taskId
+  }
+  
+   static async updateHook(data){
+    const customerorderId = data.events[0].meta.href.split('/').pop()
+    const order = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${customerorderId}?expand=state,agent,owner&limit=100`)
+    if(order.state.name != 'ремонт' && order.state.name != 'изготовление')
+      return
+    const customerorder = await Tasks.findOne({where: { skladId: customerorderId}})
+    if(!customerorder) return await SkladService.createHook(customerorderId)
+    const audit = await Client.sklad(data.auditContext.meta.href + '/events')
+    const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'get', {
+      headers: {
+        Authorization: `Bearer ${process.env['77c96af5_4dfb_11e8_9107_5048002bbbc7']}`
+      },
+    })
+    const ownerId = process.env[order.owner.id.replace(/-/g, '_')];
+    let subtasks = []
+    if(data.events[0].updatedFields.includes('positions')){
+      if(!task.subtasks){
+
+      }else{
+        subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', {
           headers: {
-             Authorization : `Bearer ${process.env[createdOrder.owner.id.replace(/-/g, '_')]}`
+            Authorization: `Bearer ${ownerId}`
           },
-          json: yougileBody
+        })))
+      }
+    }
+    console.log(task)
+    const diffMessages = [`Изменения заказа<br>`]
+    const diff = audit.rows[0].diff
+    for(const point of Object.keys(diff)){
+      switch(point){
+        case 'description': 
+          diffMessages.push(`Старое описание: ${diff[point].oldValue}<br>Новое описание: ${diff[point].newValue}`)
+          task.description = `${diff[point].newValue}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
+        break
+        case 'positions': 
+          for(const position of diff[point]){
+            if(position.oldValue && position.newValue){
+              diffMessages.push(`<br><br>Позиция обновлена с: ${position.oldValue.assortment.name} ${position.oldValue.quantity}шт<br>На: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
+              subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
+              const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
+              subtasks.push(...newTaskId)
+            }else if(position.oldValue && !position.newValue){
+              diffMessages.push(`<br><br>Позиция удалена: ${position.oldValue.assortment.name}`)
+              subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
+            }else if(!position.oldValue && position.newValue){
+              diffMessages.push(`<br><br>Добавлена новая позиция: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
+              const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
+              subtasks.push(...newTaskId)
+            }
+          }
+        break
+      }
+    }
+    const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'put', {
+      headers: {
+        Authorization: `Bearer ${ownerId}`
+      },
+      json: {
+        description: task.description,
+        subtasks: subtasks.map( el => {
+          if(typeof el === 'object')
+            return el.id
+          return el
         })
-        console.log(taskId)
-   }
-   static async updateHook(id){
-    
+      }
+    })
+    const chatMessage = diffMessages.join('')
+    await Client.yougile(`https://ru.yougile.com/api-v2/chats/${response.id}/messages`, 'post', {
+      headers: {
+        Authorization: `Bearer ${ownerId}`
+      },
+      json: {
+        label: 'Изменения',
+        text: chatMessage,
+        textHtml: chatMessage
+      }
+    })
    }
 }
+
+const createOrder = async (createdOrder, type) => {
+  const isRepair = type === 'repair';
+  const ownerId = process.env[createdOrder.owner.id.replace(/-/g, '_')];
+
+  const yougileBody = {
+    title: `${createdOrder?.project?.name || 'Без номера'}, ${new Date(new Date(createdOrder.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${createdOrder?.attributes.find(el => el.name == 'Название')?.value || 'Без названия'}`,
+    description: isRepair
+      ? `${createdOrder.description || 'Без описания'}<br><br><br>ФИО: ${createdOrder.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${createdOrder.agent?.phone || 'Без номера телефона'}">${createdOrder.agent.phone}</a>`
+      : `${createdOrder.description || 'Без описания'}`,
+    stopwatch: { running: true },
+    stickers: {},
+    columnId: isRepair
+      ? '900fba52-90fd-40c0-8305-f00940882239'
+      : '1e80a566-a300-46b8-a066-2a0c0b16880f',
+  };
+
+  yougileBody.subtasks = await createSubTasks(
+    createdOrder.positions.rows.map(el => `${el.assortment.name} ${el.quantity}шт`),
+    ownerId
+  );
+
+  if (createdOrder.deliveryPlannedMoment) {
+    yougileBody.deadline = {
+      deadline: Math.round(new Date(createdOrder.deliveryPlannedMoment).getTime())
+    };
+  }
+
+  switchAttributes(createdOrder.attributes, yougileBody);
+
+  const { id } = await Client.yougile(`https://ru.yougile.com/api-v2/tasks`, 'post', {
+    headers: {
+      Authorization: `Bearer ${ownerId}`
+    },
+    json: yougileBody
+  });
+
+  return id;
+};
 const stickersMap = {
     'Срочность': {
       name: 'Срочность',
@@ -127,7 +224,7 @@ const columnsMap = {
     'Работа с транцем': '3f0592b3-ef08-4dc2-9da1-1648859559ad',
     'Нужен звонок': '47dfc402-430b-4fd6-be7e-125fc255e4fd',
 }
-const switchAttributes = (object, attributes) => {
+const switchAttributes = (attributes, object) => {
     for(const attribute of attributes){
         switch(attribute.name){
             case 'Доставка': 
@@ -141,4 +238,58 @@ const switchAttributes = (object, attributes) => {
             break
         }
     }
+}
+
+const rules = {
+  "Лодка моторная": ["Раскрой", "Сборка корпуса", "Сборка сумок", "Установка транца", "Установка фурнитуры", "Установка днища", "Усиление"],
+  "Катамаран с рамой": ["Раскрой", "Сборка баллонов", "Сборка сумок", "Установка крепления рамы", "Установка фурнитуры", "Усиление", "Сборка рамы"],
+  "Катамаран с надувной рамой": ["Раскрой", "Сборка баллонов", "Сборка сумок", "Установка перемычек и палубы", "Установка фурнитуры", "Усиление"],
+  "Моторная лодка НДНД": ["Раскрой", "Сборка корпуса", "Сборка днища", "Сборка сумок", "Установка транца", "Установка фурнитуры", "Установка днища", "Усиление"],
+  "Баллон для катамарана": ["Раскрой", "Сборка баллона", "Установка крепления", "Установка усиления", "Установка фурнитуры"],
+  "Внутренний баллон для катамарана": ["Раскрой", "Сборка баллона"],
+  "Надувное кресло": ["Раскрой", "Сборка кресла", "Установка фурнитуры"],
+  "Гребная лодка НД": ["Раскрой", "Сборка корпуса", "Сборка днища", "Сборка сумки", "Установка фурнитуры", "Установка днища"],
+  "Лодка гребная": ["Раскрой", "Сборка корпуса", "Сборка сумки", "Установка фурнитуры", "Установка днища"],
+  "Матрас надувной": ["Раскрой", "Сборка матраса", "Пошив чехла", "Установка фурнитуры"],
+  "Накладка на банку": ["Раскрой", "Шитье накладок"],
+  "Комплект накладка на банку + сумка": ["Раскрой", "Шитье накладок", "Шитье сумки"],
+  "Сумка на ликтрос": ["Раскрой", "Пошив сумок", "Установка фурнитуры"],
+  "Сумка на молнии": ["Раскрой", "Пошив молний и ручек", "Сборка сумок"],
+  "Сумка для": ["Раскрой", "Пошив молний и ручек", "Сборка сумок"],
+  "Ведро": ["Раскрой", "Пошив", "Сборка ведер"],
+  "Надувной баллон \"Динамический снаряд\"": ["Раскрой", "Сборка снарядов", "Установка фурнитуры"],
+  "Балансировочная платформа из ткани пвх": ["Раскрой", "Сборка платформ", "Установка фурнитуры"],
+  "Конус из ткани пвх, с ручками": ["Раскрой", "Пошив тарелочек", "Сборка конусов", "Установка фурнитуры"],
+  "Гермосумка": ["Раскрой", "Пошив фурнитуры", "Сборка"],
+  "Гермомешок 40л": ["Раскрой", "Пошив фурнитуры", "Сборка"],
+  "Гермомешок 60л": ["Раскрой", "Пошив фурнитуры", "Сборка"],
+  "Гермомешок 80л": ["Раскрой", "Сборка"],
+  "Гермомешок 100л": ["Раскрой", "Сборка"],
+  "Гермомешок 120л": ["Раскрой", "Сборка"],
+  "Гермомешок 140л": ["Раскрой", "Сборка"],
+  "Гермомешок 160л": ["Раскрой", "Сборка"],
+  "Баллоны из ткани пвх по размерам заказчика для РИБ-390": ["Раскрой", "Сборка корпуса", "Обвес"],
+  "Баллоны из ткани пвх по размерам заказчика для РИБ-445 с пластиковой вставкой": ["Раскрой", "Сборка корпуса", "Обвес"],
+  "Баллоны из ткани пвх по размерам заказчика для РИБ-465": ["Раскрой", "Сборка корпуса", "Обвес"]
+};
+
+const createSubTasks = async (positions, owner) => {
+  const result = []
+  for(const position of positions){
+    const args = {
+      headers: {
+         Authorization : `Bearer ${owner}`
+      },
+      json: {title: position }
+    }
+    const matchedKey = Object.keys(rules).find(key => position.includes(key));
+    const subtasks = rules[matchedKey]
+    if(subtasks){
+      const idsubtasks = await createSubTasks(subtasks, owner)
+      args.json.subtasks = idsubtasks
+    }
+    result.push(Client.yougile(`https://ru.yougile.com/api-v2/tasks`, 'post', args))
+  }
+  const ids = await Promise.all(result)
+  return ids.map(el => el.id)
 }
