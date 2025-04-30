@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import valkey from '../utils/valkey.js';
+import ApiError from '../utils/apiError.js';
 export default class TokenService {
     static async generateTokens(payload) {
         const accessToken = this.generateAccessToken(payload)
@@ -41,7 +42,7 @@ export default class TokenService {
     }
     static async refreshTokens(refreshToken) {
         const exists = await valkey.exists(refreshToken)
-        if(!exists) throw new Error('Invalid refresh token')
+        if(!exists) throw new ApiError(404, 'Invalid refresh token')
         const payload = this.verifyRefreshToken(refreshToken)
         const tokens = this.generateTokens({
             id: payload.id,

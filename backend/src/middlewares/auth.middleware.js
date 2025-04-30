@@ -7,6 +7,8 @@ const authMiddleware = async (req, res, next) => {
     if (ipRangeCheck(req.ip, ozonIps)) {
         return next();
     }
+    if(req.query.token === process.env.ApiToken)
+        return next()
     try {
         const accessToken = req.cookies.accessToken
         const refreshToken = req.cookies.refreshToken

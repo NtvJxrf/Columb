@@ -1,16 +1,10 @@
 import axios from "axios";
 import Product from '../databases/models/ozon/product.model.js'
 import logger from "../utils/logger.js";
-const ozonHeaders = {
-    headers: {
-        "Client-Id": process.env.Ozon_Client_Id,
-        "Api-Key": process.env.Ozon_Api_Key
-    }
-}
-const skladHeaders = { 
-    headers: {
-    Authorization : `Basic ${process.env.SkladAuthToken}`
-}}
+import Client from "../utils/got.js";
+import doTransaction from "../utils/doTransaction.js";
+import ApiError from "../utils/apiError.js";
+let isUpgrading = false
 export default class OzonService{
     static async getProducts(){
         const result = await Product.findAll({ where: { listed: true } })
@@ -29,17 +23,12 @@ export default class OzonService{
         return results.filter(el => el.status != 'fulfilled').map(el => el.value.code)
     }
     static async addProduct(code) {
-        const response = await axios.post(`https://api-seller.ozon.ru/v3/product/info/list`, {
-            "offer_id": [ code ],
-        }, ozonHeaders);
-        
-        const skladInfo = await axios.get(`https://api.moysklad.ru/api/remap/1.2/entity/assortment?filter=code=${code}&expand=components.assortment&limit=100`, skladHeaders);
-        
-        if (response.status !== 200 || skladInfo.status !== 200)
-            return false;
-    
-        const ozonData = response.data.items[0];
-        const skladData = skladInfo.data.rows[0];
+        const response = await Client.ozon(`https://api-seller.ozon.ru/v3/product/info/list`, 'post',{
+                "offer_id": [ code ],
+            })
+        const skladInfo = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/assortment?filter=code=${code}&expand=components.assortment&limit=100`, 'get');
+        const ozonData = response.items[0];
+        const skladData = skladInfo.rows[0];
     
         const productArgs = {
             code,
@@ -51,34 +40,43 @@ export default class OzonService{
             updateIt: true,
             listed: true,
         };
-    
-        let [product] = await Product.upsert(productArgs, { returning: true, conflictFields: ['code'] },);
-    
-            
-        if (skladData.components) {
-            for (const item of skladData.components.rows) {
-                const el = item.assortment;
-    
-                const componentArgs = {
-                    code: el.code,
-                    name: el.name,
-                    assortmentId: el.id,
-                    type: el.meta.type,
-                };
+        return await doTransaction(async (t) => {
+            let [product] = await Product.upsert(productArgs, { 
+                returning: true,
+                conflictFields: ['code'],
+                transaction: t
+            });
+        
+                
+            if (skladData.components) {
+                for (const item of skladData.components.rows) {
+                    const el = item.assortment;
+        
+                    const componentArgs = {
+                        code: el.code,
+                        name: el.name,
+                        assortmentId: el.id,
+                        type: el.meta.type,
+                    };
 
-                let [component] = await Product.upsert(componentArgs, { returning: true }, { conflictFields: ['code'] });
-    
-                if (Array.isArray(component)) {
-                    component = component[0];
+                    let [component] = await Product.upsert(componentArgs, {
+                        returning: true,
+                        conflictFields: ['code'],
+                        transaction: t
+                      });
+        
+                    if (Array.isArray(component)) {
+                        component = component[0];
+                    }
+        
+                    await product.addComponent(component, {
+                        through: { quantity: item.quantity },
+                        transaction: t
+                      });
                 }
-    
-                await product.addComponent(component, {
-                    through: { quantity: item.quantity }
-                });
             }
-        }
-    
-        return true;
+            return true
+        }, 'Ошибка при добавлении продукта')
     }
     static async newPosting(data){
         const args = {
@@ -120,7 +118,7 @@ export default class OzonService{
             "description": `This document created automatically with API, it belongs to order with posting number ${data.posting_number}`
         }
         args.positions = await getPositions(data)
-        const response = await axios.post(`https://api.moysklad.ru/api/remap/1.2/entity/demand`, args, skladHeaders)
+        const response = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/demand`, 'post', args)
     }
     static async postingCancelled(data){
         const args = {
@@ -149,107 +147,120 @@ export default class OzonService{
             "description": `This document created automatically with API, it belongs to order with posting number ${data.posting_number}`
         }
         args.positions = await getPositions(data)
-        const response = await axios.post(`https://api.moysklad.ru/api/remap/1.2/entity/enter`, args, skladHeaders)
+        const response = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/enter`, 'post', args)
     }
     static async nullAllStock() {
-        const warehouseId = 23524151071000;
-        const products = await Product.findAll({
-            where: { listed: true },
-            attributes: ['productId']
-        });
-        await Product.update({ updateIt: false }, { where: { listed: true } })
-        const allStocks = products.map(el => ({
-            product_id: el.productId,
-            quant_size: 1,
-            stock: 0,
-            warehouse_id: warehouseId
-        }));
-    
-        const chunkSize = 95;
-        for (let i = 0; i < allStocks.length; i += chunkSize) {
-            const chunk = allStocks.slice(i, i + chunkSize);
-            try {
-                const response = await axios.post(
-                    `https://api-seller.ozon.ru/v2/products/stocks`,
-                    { stocks: chunk },
-                    ozonHeaders
-                );
-
-            } catch (err) {
-                logger.error('Ошибка при обнулении остатков', err.message)
-            }
-    
-            if (i + chunkSize < allStocks.length) {
-                await new Promise(resolve => setTimeout(resolve, 30_000));
-            }
-        }
-    }
-    static async updateAllStock(){
-        console.time('up')
-        const warehouseId = 23524151071000;
-        const products = await Product.findAll({
-            where: { listed: true, updateIt: true },
-            attributes: ['productId', 'assortmentId', 'type'],
-            include: [{
-                    model: Product,
-                    as: 'Components',
-                    through: { attributes: ['quantity'] }
-                }]
-        });
-        const stock = await axios.get(`https://api.moysklad.ru/api/remap/1.2/report/stock/all/current?include=zeroLines`, skladHeaders)
-        const stockMap = new Map()
-        stock.data.forEach(el => stockMap.set(el.assortmentId, el.stock))
-        const allStocks = products.map(el => {
-            let stock = Math.max(stockMap.get(el.assortmentId) || 0, 0)
-            if(el.type === 'bundle'){
-                const temp = []
-                el.Components.forEach( i => temp.push(Math.max((stockMap.get(i.assortmentId) || 0) / i.ProductComponents.quantity, 0)))
-                console.log(temp)
-                stock = Math.floor(Math.min(...temp))
-
-            }
-            return {
+        if (isUpgrading)
+            throw new ApiError(503, 'В данный момент товары обновляются, попробуйте позже')
+        
+        isUpgrading = true;
+        
+        try {
+            const warehouseId = 23524151071000;
+            const products = await Product.findAll({
+                where: { listed: true },
+                attributes: ['productId']
+            });
+        
+            await Product.update({ updateIt: false }, { where: { listed: true } });
+        
+            const allStocks = products.map(el => ({
                 product_id: el.productId,
                 quant_size: 1,
-                stock,
+                stock: 0,
                 warehouse_id: warehouseId
+            }));
+        
+            const chunkSize = 95;
+        
+            for (let i = 0; i < allStocks.length; i += chunkSize) {
+                const chunk = allStocks.slice(i, i + chunkSize);
+                try {
+                    const response = await Client.ozon(
+                        `https://api-seller.ozon.ru/v2/products/stocks`,
+                        'post',
+                        { stocks: chunk }
+                    );
+                } catch (err) {
+                    logger.error('Ошибка при обнулении остатков', err.message);
+                }
+        
+                if (i + chunkSize < allStocks.length) {
+                    await new Promise(resolve => setTimeout(resolve, 30_000));
+                }
             }
-        });
-        const chunkSize = 95;
-        for (let i = 0; i < allStocks.length; i += chunkSize) {
-            const chunk = allStocks.slice(i, i + chunkSize);
-            try {
-                const response = await axios.post(
-                    `https://api-seller.ozon.ru/v2/products/stocks`,
-                    { stocks: chunk },
-                    ozonHeaders
-                );
-            } catch (err) {
-                logger.error('Ошибка при обнулении остатков', err.message)
-            }
-    
-            if (i + chunkSize < allStocks.length) {
-                await new Promise(resolve => setTimeout(resolve, 30_000));
-            }
+        
+        } finally {
+            isUpgrading = false
         }
-        console.timeEnd('up')
+        return true
+    }
+    static async updateAllStock(){
+        if (isUpgrading)
+            throw new ApiError(503, 'В данный момент товары обновляются, попробуйте позже')
+        
+        isUpgrading = true;
+        try{
+            const warehouseId = 23524151071000;
+            const products = await Product.findAll({
+                where: { listed: true, updateIt: true },
+                attributes: ['productId', 'assortmentId', 'type'],
+                include: [{
+                        model: Product,
+                        as: 'Components',
+                        through: { attributes: ['quantity'] }
+                    }]
+            });
+            const stock = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/report/stock/all/current?include=zeroLines`)
+            const stockMap = new Map()
+            stock.forEach(el => stockMap.set(el.assortmentId, el.stock))
+            const allStocks = products.map(el => {
+                let stock = Math.max(stockMap.get(el.assortmentId) || 0, 0)
+                if(el.type === 'bundle'){
+                    const temp = []
+                    el.Components.forEach( i => temp.push(Math.max((stockMap.get(i.assortmentId) || 0) / i.ProductComponents.quantity, 0)))
+                    stock = Math.floor(Math.min(...temp))
+
+                }
+                return {
+                    product_id: el.productId,
+                    quant_size: 1,
+                    stock,
+                    warehouse_id: warehouseId
+                }
+            });
+            const chunkSize = 95;
+            for (let i = 0; i < allStocks.length; i += chunkSize) {
+                const chunk = allStocks.slice(i, i + chunkSize);
+                try {
+                    const response = await Client.ozon(`https://api-seller.ozon.ru/v2/products/stocks`,'post',{ stocks: chunk },);
+                } catch (err) {
+                    logger.error('Ошибка при обновлении остатков', err.message)
+                }
+        
+                if (i + chunkSize < allStocks.length) {
+                    await new Promise(resolve => setTimeout(resolve, 30_000));
+                }
+            }
+        }finally{
+            isUpgrading = false
+        }
+        return true
     }
     static async deleteProducts(code){
 
     }
 
-    static async syncAllProduct() {    
-        const allCodes = await axios.post(`https://api-seller.ozon.ru/v3/product/list`, {
+    static async syncAllProduct() {
+        const allCodes = await Client.ozon(`https://api-seller.ozon.ru/v3/product/list`, 'post', {
             "filter": { "visibility": "ALL" },
             "limit": 1000
-        }, ozonHeaders)
+        })
+        const codes = allCodes.result.items.map(el => el.offer_id)
     
-        const codes = allCodes.data.result.items.map(el => el.offer_id)
-    
-        const ozonInfo = await axios.post(`https://api-seller.ozon.ru/v3/product/info/list`, {
+        const ozonInfo = await Client.ozon(`https://api-seller.ozon.ru/v3/product/info/list`, 'post', {
             "offer_id": codes,
-        }, ozonHeaders)
-
+        })
         const chunkedOfferIds = [...codes]
         const responses = []
     
@@ -258,13 +269,11 @@ export default class OzonService{
             const filterString = temp.map(code => `code=${code}`).join(';');
             const url = `https://api.moysklad.ru/api/remap/1.2/entity/assortment?filter=${filterString}&expand=components.assortment&limit=100`;
     
-            responses.push(axios.get(url, skladHeaders));
+            responses.push(Client.sklad(url, 'get'));
         }
     
-        const resultResponses = await Promise.allSettled(responses)
-    
         const products = {}
-        ozonInfo.data.items.forEach(item => {
+        ozonInfo.items.forEach(item => {
             products[item.offer_id] = {
                 sku: item.sources.find(i => i.source === 'sds' && i.shipment_type === 'SHIPMENT_TYPE_GENERAL')?.sku,
                 code: item.offer_id,
@@ -273,9 +282,9 @@ export default class OzonService{
                 updateIt: true
             }
         })
-    
+        const resultResponses = await Promise.allSettled(responses)
         for (const res of resultResponses) {
-            const rows = res.value.data.rows
+            const rows = res.value.rows
             for (const item of rows) {
                 const productData = {
                     code: item.code,
@@ -300,29 +309,31 @@ export default class OzonService{
                 }
             }
         }
-    
-        for (const item of Object.values(products)) {
-            let [product] = await Product.upsert(item, { conflictFields: ['code'] });
-    
-            if (item.components) {
-                const componentPromises = item.components.map(async (i) => {
-                    const el = i.assortment;
-                    let [component] = await Product.upsert({
-                        code: el.code,
-                        name: el.name,
-                        assortmentId: el.id,
-                        type: el.meta.type,
-                    }, { conflictFields: ['code'] });
-    
-                    await product.addComponent(component, {
-                        through: { quantity: i.quantity }
+        return doTransaction(async (t) => {
+            for (const item of Object.values(products)) {
+                let [product] = await Product.upsert(item, { conflictFields: ['code'], transaction: t});
+        
+                if (item.components) {
+                    const componentPromises = item.components.map(async (i) => {
+                        const el = i.assortment;
+                        let [component] = await Product.upsert({
+                            code: el.code,
+                            name: el.name,
+                            assortmentId: el.id,
+                            type: el.meta.type,
+                        }, { conflictFields: ['code'], transaction: t });
+        
+                        await product.addComponent(component, {
+                            through: { quantity: i.quantity },
+                            transaction: t
+                        });
                     });
-                });
-
-                await Promise.all(componentPromises);
+    
+                    await Promise.all(componentPromises);
+                }
             }
-        }
-        return true;
+            return true;
+        }, 'Ошибка при синхронизации всех продуктов')
     }
     
 }
@@ -337,8 +348,8 @@ const getPositions = async (data) => {
             orderMap[el.code] = {sku: el.sku}
             return `code=${el.code}`
         }).join(';')
-        const skladData = await axios.get(`https://api.moysklad.ru/api/remap/1.2/entity/assortment?filter=${filterString}&expand=components.assortment&limit=100`, skladHeaders)
-        const positions = skladData.data.rows.map(el => {
+        const skladData = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/assortment?filter=${filterString}&expand=components.assortment&limit=100`)
+        const positions = skladData.rows.map(el => {
             if(el.components){
                 return el.components.rows.map(component => {
                     return {

@@ -9,23 +9,19 @@ export default class OzonController{
         res.status(200).json(result)
     }
     static async addProduct(req, res){
-        const result = await OzonService.addProduct(req.body.code)
-        if(result)
-            return res.sendStatus(200)
-        res.sendStatus(500)
+        await OzonService.addProduct(req.body.code)
+        res.sendStatus(200)
     }
     static async syncAllProduct(req, res){
-        const result = await OzonService.syncAllProduct() 
-        if(result)
-            return res.sendStatus(200)
-        res.sendStatus(500)
+        await OzonService.syncAllProduct() 
+        res.sendStatus(200)
     }
     static async nullAll(req, res){
-        const result = await OzonService.nullAllStock()
+        await OzonService.nullAllStock()
         return res.sendStatus(200)
     }
     static async updateAll(req, res){
-        const result = await OzonService.updateAllStock()
+        await OzonService.updateAllStock()
         return res.sendStatus(200)
     }
     static ozonHook(req, res){
