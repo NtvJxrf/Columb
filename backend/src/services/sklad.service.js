@@ -14,7 +14,7 @@ export default class SkladService{
         const createdOrder = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`)
         const yougileBody = {
             title: `${createdOrder?.project?.name || 'Без номера'}, ${new Date(new Date(createdOrder.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${createdOrder?.attributes.find(el => el.name == 'Название')?.value || 'Без названия'}`,
-            description: `${createdOrder.description || 'Без описания'}<br><br><br>ФИО: ${createdOrder.agent.name}<br>Телефон: <a href="tel:+${createdOrder.agent.phone}">${createdOrder.agent.phone}</a>`,
+            description: `${createdOrder.description || 'Без описания'}<br><br><br>ФИО: ${createdOrder.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${createdOrder.agent?.phone || 'Без номера телефона'}">${createdOrder.agent.phone}</a>`,
             stopwatch: { running: true },
             stickers: {},
             columnId: '900fba52-90fd-40c0-8305-f00940882239',
@@ -26,6 +26,7 @@ export default class SkladService{
                             })
             }]
         }
+        createdOrder.deliveryPlannedMoment && (yougileBody.deadline ={ deadline: Math.round(new Date(createdOrder?.deliveryPlannedMoment).getTime())})
         switchAttributes(yougileBody, createdOrder.attributes)
         const taskId = await Client.yougile(`https://ru.yougile.com/api-v2/tasks`,'post', {
           headers: {
