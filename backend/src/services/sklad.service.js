@@ -44,7 +44,6 @@ export default class SkladService{
         })))
       }
     }
-    console.log(task)
     const diffMessages = [`Изменения заказа<br>`]
     const diff = audit.rows[0].diff
     for(const point of Object.keys(diff)){

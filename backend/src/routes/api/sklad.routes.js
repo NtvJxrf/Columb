@@ -2,7 +2,7 @@ import express from "express"
 import MoySkladController from '../../controllers/moysklad.controller.js'
 import adminRouteMiddleware from "../../middlewares/adminRoute.middleware.js"
 const router = express.Router()
-//api/sklad
+//api/moysklad
 router
     .route('/createHook')
     .post(MoySkladController.createHook)

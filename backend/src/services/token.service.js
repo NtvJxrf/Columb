@@ -5,9 +5,6 @@ export default class TokenService {
     static async generateTokens(payload) {
         const accessToken = this.generateAccessToken(payload)
         const refreshToken = await this.generateRefreshToken(payload)
-        await valkey.set(refreshToken, payload.id, 'EX', process.env.JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60)
-        await valkey.sadd(`refreshTokens:${payload.id}`, refreshToken);
-        await valkey.expire('refreshTokens:${payload.id}', process.env.JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60);
         return { accessToken, refreshToken };
     }
 
@@ -19,7 +16,7 @@ export default class TokenService {
         const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: `${process.env.JWT_REFRESH_EXPIRATION_DAYS}d` });
         await valkey.set(refreshToken, payload.id, 'EX', process.env.JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60)
         await valkey.sadd(`refreshTokens:${payload.id}`, refreshToken);
-        await valkey.expire('refreshTokens:${payload.id}', process.env.JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60);
+        await valkey.expire(`refreshTokens:${payload.id}`, process.env.JWT_REFRESH_EXPIRATION_DAYS * 24 * 60 * 60);
         return refreshToken
     }
 
@@ -42,9 +39,9 @@ export default class TokenService {
     }
     static async refreshTokens(refreshToken) {
         const exists = await valkey.exists(refreshToken)
-        if(!exists) throw new ApiError(404, 'Invalid refresh token')
+        if(!exists) throw new ApiError(401, 'Invalid refresh token')
         const payload = this.verifyRefreshToken(refreshToken)
-        const tokens = this.generateTokens({
+        const tokens = await this.generateTokens({
             id: payload.id,
             username: payload.username,
             role: payload.role
