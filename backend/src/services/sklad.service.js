@@ -114,15 +114,15 @@ export default class SkladService{
           break;
             
           case 'Название':
-            diffMessages.push(`<br><br><br>Название изменено с: ${oldValue}<br>На: ${newValue}<hr>`);
+            diffMessages.push(`<br><br><br>Название изменено с: ${oldValue || 'Без названия'}<br>На: ${newValue}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
           case 'deliveryPlannedMoment':
-            diffMessages.push(`<br><br><br>Дедлайн изменен с: ${oldValue}<br>На: ${newValue}МСК<hr>`);
+            diffMessages.push(`<br><br><br>Дедлайн изменен с: ${oldValue || 'Без дедлайна'}<br>На: ${newValue}МСК<hr>`);
             json.deadline = { deadline: formatDeadline(order.deliveryPlannedMoment) }
           break
           case 'project':
-            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue?.name}<br>На: ${newValue?.name}<hr>`);
+            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue.name || 'Без проекта'}<br>На: ${newValue?.name}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
         }
