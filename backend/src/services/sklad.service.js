@@ -33,12 +33,12 @@ export default class SkladService{
       headers,
     })
     let subtasks = []
-    if(data.events[0].updatedFields.includes('positions') && task.subtasks?.length){
+    if(data.events[0]?.updatedFields?.includes('positions') && task.subtasks?.length){
       subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', {headers})))
     }
     const diffMessages = [`Изменения заказа<br><br>`]
     const diff = audit.rows[0].diff
-    await createDiff(diff, task, subtasks, diffMessages)
+    await createDiff(diff, task, subtasks, diffMessages, ownerId)
     const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'put', {
       headers,
       json: {
@@ -50,6 +50,7 @@ export default class SkladService{
         })
       }
     })
+    if(diffMessages.length ===1 ) return 
     const chatMessage = diffMessages.join('')
     await Client.yougile(`https://ru.yougile.com/api-v2/chats/${response.id}/messages`, 'post', {
       headers,
@@ -61,7 +62,7 @@ export default class SkladService{
     })
    }
 }
-const createDiff = async (diff, task, subtasks, diffMessages) => {
+const createDiff = async (diff, task, subtasks, diffMessages, ownerId) => {
   for(const point of Object.keys(diff)){
     switch(point){
       case 'description': 
