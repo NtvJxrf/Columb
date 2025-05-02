@@ -38,7 +38,7 @@ export default class SkladService{
     }
     const diffMessages = [`Изменения заказа<br><br>`]
     const diff = audit.rows[0].diff
-    await createDiff(diff, task, subtasks, diffMessages, ownerId)
+    await createDiff(diff, task, subtasks, diffMessages, ownerId, order)
     const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'put', {
       headers,
       json: {
@@ -62,7 +62,7 @@ export default class SkladService{
     })
    }
 }
-const createDiff = async (diff, task, subtasks, diffMessages, ownerId) => {
+const createDiff = async (diff, task, subtasks, diffMessages, ownerId, order) => {
   for(const point of Object.keys(diff)){
     switch(point){
       case 'description': 
