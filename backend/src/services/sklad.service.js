@@ -122,7 +122,7 @@ export default class SkladService{
             json.deadline = { deadline: formatDeadline(order.deliveryPlannedMoment) }
           break
           case 'project':
-            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue.name || 'Без проекта'}<br>На: ${newValue?.name}<hr>`);
+            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue?.name || 'Без проекта'}<br>На: ${newValue?.name}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
         }
