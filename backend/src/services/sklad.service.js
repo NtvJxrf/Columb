@@ -93,13 +93,18 @@ export default class SkladService{
       
               if (oldTitle && newTitle) {
                 diffMessages.push(`<br><br>Позиция обновлена с: ${oldTitle}<br>На: ${newTitle}<hr>`);
-                subtasks = subtasks.filter(el => el.title !== oldTitle);
+                subtasks = subtasks.filter(el => {
+                  console.log('из обновления позиции', el)
+                  if(el.title !== oldTitle)
+                    return true
+                  Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el.id}`, 'put', { headers, json: { deleted: true } })
+                });
                 const newTasks = await createSubTasks([newTitle], ownerId);
                 subtasks.push(...newTasks);
               } else if (oldTitle && !newTitle) {
                 diffMessages.push(`<br><br>Позиция удалена: ${oldTitle}<hr>`);
                 subtasks = subtasks.filter(el => {
-                  console.log(el)
+                  console.log('из удаления позиции', el)
                   if(el.title !== oldTitle)
                     return true
                   Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el.id}`, 'put', { headers, json: { deleted: true } })
