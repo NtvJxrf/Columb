@@ -1,6 +1,5 @@
 import express from "express"
 import MoySkladController from '../../controllers/moysklad.controller.js'
-import adminRouteMiddleware from "../../middlewares/adminRoute.middleware.js"
 const router = express.Router()
 //api/moysklad
 router
@@ -9,4 +8,7 @@ router
 router
     .route('/updateHook')
     .post(MoySkladController.updateHook)
+router
+    .route('/moveCardInYougile')
+    .post(MoySkladController.moveCardInYougile)
 export default router

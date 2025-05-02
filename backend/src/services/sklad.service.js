@@ -1,7 +1,5 @@
 import Client from '../utils/got.js'
-import Tasks from '../databases/models/yougile/tasks.model.js';
-import { json } from 'sequelize';
-import { text } from 'express';
+import Tasks from '../databases/models/yougile/tasks.model.js'
 export default class SkladService{
   static async createHook(id) {
     const createdOrder = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`);
@@ -18,36 +16,30 @@ export default class SkladService{
   }
 
 
-  static async updateHook(data){
-    const trackedFields = ["description", "positions", 'Название', 'project', 'deliveryPlannedMoment'];
-    const trackedStates = ['ремонт', 'изготовление', 'в работе']
-    const updated = data.events[0]?.updatedFields;
-    if (!updated || !updated.some(field => trackedFields.includes(field))) return
+  static async updateHook(id){
+    const preAudit = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}/audit`)
+    const audit = preAudit.rows[0]
+    const trackedEvents = ['update']
 
-    const customerorderId = data.events[0].meta.href.split('/').pop()
-    const order = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${customerorderId}?expand=project,agent,state,positions.assortment,owner&limit=100`)
+    if(!trackedEvents.includes(audit.eventType)) return
 
-    if(!trackedStates.includes(order.state.name)) return
+    const trackedFields = ["description", "positions", 'Название', 'project', 'deliveryPlannedMoment']
+    const updatedFields = Object.keys(audit.diff)
+    if(!trackedFields.some(field => updatedFields.includes(field))) return 
 
-    const isRepair = order.state.name === 'ремонт';
-    const customerorder = await Tasks.findOne({ where: { skladId: customerorderId } })
+    const order = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`)
 
-    if(!customerorder) return await SkladService.createHook(customerorderId)
+    const customerorder = await Tasks.findOne({ where: { skladId: id } })
 
-    const audit = await Client.sklad(data.auditContext.meta.href + '/events')
+    if(!customerorder) return await SkladService.createHook(id)
     const ownerId = process.env[order.owner.id.replace(/-/g, '_')];
     const headers = { Authorization: `Bearer ${ownerId}`}
     const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'get', { headers })
-    const diff = audit.rows[0].diff
+    const isRepair = repairColumnsIds[task.columnId]
 
-    let subtasks = []
-    if(data.events[0]?.updatedFields?.includes('positions') && task.subtasks?.length){
-      subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', { headers })))
-    }
-
-    const diffMessages = [`Изменения заказа<br><br><br><hr>`]
+    const diffMessages = [`Изменения заказа<br><hr>`]
     const json = {}
-
+    const diff = audit.diff
     await parseDiffs()
 
     const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'put', {
@@ -65,9 +57,8 @@ export default class SkladService{
         textHtml: chatMessage
       }
     })
-
     async function parseDiffs() {      
-      for (const point of Object.keys(diff)) {
+      for (const point of updatedFields) {
         const { oldValue, newValue } = diff[point];
       
         switch (point) {
@@ -92,9 +83,8 @@ export default class SkladService{
               const newTitle = position.newValue ? formatPositionTitle(position.newValue) : null;
       
               if (oldTitle && newTitle) {
-                diffMessages.push(`<br><br>Позиция обновлена с: ${oldTitle}<br>На: ${newTitle}<hr>`);
+                diffMessages.push(`<br>Позиция обновлена с: ${oldTitle}<br>На: ${newTitle}<hr>`);
                 subtasks = subtasks.filter(el => {
-                  console.log('из обновления позиции', el)
                   if(el.title !== oldTitle)
                     return true
                   Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el.id}`, 'put', { headers, json: { deleted: true } })
@@ -102,15 +92,14 @@ export default class SkladService{
                 const newTasks = await createSubTasks([newTitle], ownerId);
                 subtasks.push(...newTasks);
               } else if (oldTitle && !newTitle) {
-                diffMessages.push(`<br><br>Позиция удалена: ${oldTitle}<hr>`);
+                diffMessages.push(`<br>Позиция удалена: ${oldTitle}<hr>`);
                 subtasks = subtasks.filter(el => {
-                  console.log('из удаления позиции', el)
                   if(el.title !== oldTitle)
                     return true
                   Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el.id}`, 'put', { headers, json: { deleted: true } })
                 });
               } else if (!oldTitle && newTitle) {
-                diffMessages.push(`<br><br>Добавлена новая позиция: ${newTitle}<hr>`);
+                diffMessages.push(`<br>Добавлена новая позиция: ${newTitle}<hr>`);
                 const newTasks = await createSubTasks([newTitle], ownerId);
                 subtasks.push(...newTasks);
               }
@@ -120,20 +109,35 @@ export default class SkladService{
           break;
             
           case 'Название':
-            diffMessages.push(`<br><br><br>Название изменено с: ${oldValue || 'Без названия'}<br>На: ${newValue}<hr>`);
+            diffMessages.push(`<br>Название изменено с: ${oldValue || 'Без названия'}<br>На: ${newValue}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
           case 'deliveryPlannedMoment':
-            diffMessages.push(`<br><br><br>Дедлайн изменен с: ${oldValue || 'Без дедлайна'}<br>На: ${newValue}МСК<hr>`);
+            diffMessages.push(`<br>Дедлайн изменен с: ${oldValue || 'Без дедлайна'}<br>На: ${newValue}МСК<hr>`);
             json.deadline = { deadline: formatDeadline(order.deliveryPlannedMoment) }
           break
           case 'project':
-            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue?.name || 'Без проекта'}<br>На: ${newValue?.name}<hr>`);
+            diffMessages.push(`<br>Проект изменен с: ${oldValue?.name || 'Без проекта'}<br>На: ${newValue?.name}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
         }
       }      
     }
+  }
+  static async moveCardInYougile(id){
+    const order = await Tasks.findOne({ where: { skladId: id } })
+    if(!order) return
+    const headers = { Authorization: `Bearer ${process.env['77c96af5_4dfb_11e8_9107_5048002bbbc7']}`}
+    const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${order.yougileId}`, 'get', { headers })
+    const isRepair = repairColumnsIds[task.columnId]
+    const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${order.yougileId}`, 'put', {
+      headers,
+      json: {
+        columnId: isRepair ? 'bcb0d4ad-e9bd-4334-b4e3-33e050187504' : 'e177d24a-ae96-4bf1-a97b-18a13b018f75',
+        completed: true
+      }
+    })
+    return response
   }   
 }
 const createOrder = async (createdOrder, type) => {
@@ -307,6 +311,18 @@ const rules = {
   "Баллоны из ткани пвх по размерам заказчика для РИБ-445 с пластиковой вставкой": ["Раскрой", "Сборка корпуса", "Обвес"],
   "Баллоны из ткани пвх по размерам заказчика для РИБ-465": ["Раскрой", "Сборка корпуса", "Обвес"]
 };
+const repairColumnsIds = {
+  '900fba52-90fd-40c0-8305-f00940882239': true,
+  'f90f1d04-50aa-469f-a147-ec9100f09e43': true,
+  '3f0592b3-ef08-4dc2-9da1-1648859559ad': true,
+  'e0fa6da2-2a12-44ff-9ecc-65636086e399': true,
+  'bcb0d4ad-e9bd-4334-b4e3-33e050187504': true,
+  '47dfc402-430b-4fd6-be7e-125fc255e4fd': true,
+  '4f871d08-03cc-40a8-96f4-12b4a0d22208': true,
+  '749e0070-092f-449f-8949-e5080a832a35': true,
+  'ad93bdec-5e0b-4588-a962-658bd56b4e88': true,
+  '8b3876b7-4aa0-4c06-93a3-d25d0752df00': true,
+}
 
 const createSubTasks = async (positions, owner) => {
   const result = []
