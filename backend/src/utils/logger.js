@@ -2,6 +2,10 @@ import winston from "winston"
 
 const { combine, timestamp, printf, colorize, align } = winston.format
 
+import path from "path"
+import { fileURLToPath } from "url"
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const logDirectory = path.join(__dirname, "..", "logs")
 const logger = winston.createLogger({
   level: process.env.NODE_ENV === "production" ? "info" : "debug",
   format: combine(
@@ -12,8 +16,8 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console(),
-    new winston.transports.File({ filename: "logs/error.log", level: "error" }),
-    new winston.transports.File({ filename: "logs/combined.log" }),
+    new winston.transports.File({ filename: path.join(logDirectory, "error.log"), level: "error" }),
+    new winston.transports.File({ filename: path.join(logDirectory, "combined.log") }),
   ],
   exitOnError: false,
 })
