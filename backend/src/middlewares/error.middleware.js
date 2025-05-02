@@ -3,9 +3,7 @@ import logger from '../utils/logger.js'
 import ApiError from '../utils/apiError.js'
 
 export const errorConverter = (err, req, res, next) => {
-  if (process.env.NODE_ENV === 'development'){
-    console.error(err)
-  }
+  console.error(err)
   let error = err
   if (err.name === 'ValidationError') {
     const message = err.message

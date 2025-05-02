@@ -122,7 +122,7 @@ export default class SkladService{
             json.deadline = { deadline: formatDeadline(order.deliveryPlannedMoment) }
           break
           case 'project':
-            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue.name}<br>На: ${newValue.name}<hr>`);
+            diffMessages.push(`<br><br><br>Проект изменен с: ${oldValue?.name}<br>На: ${newValue?.name}<hr>`);
             json.title = formatTitle(isRepair, order)
           break
         }
@@ -324,7 +324,7 @@ const createSubTasks = async (positions, owner) => {
 }
 
 const formatPositionTitle = (position) => `${position.assortment.name} ${position.quantity}шт`;
-const formatTitle = (isRepair, order) => `${(isRepair ? order?.project?.name : order.name)|| 'Без номера'}, ${new Date(new Date(order.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${order?.attributes.find(el => el.name == 'Название')?.value || 'Без названия'}`
+const formatTitle = (isRepair, order) => `${(isRepair ? order?.project?.name : order.name)|| 'Без номера'}, ${new Date(new Date(order.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${order?.attributes.find(el => el?.name == 'Название')?.value || 'Без названия'}`
 const formatDeadline = (date) => Math.round(new Date(date).getTime())
 const formatDescription = (order, isRepair) => isRepair
   ? `${order.description || 'Без описания'}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
