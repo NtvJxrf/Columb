@@ -20,6 +20,7 @@ export default class SkladService{
 
   static async updateHook(data){
     const trackedFields = ["description", "positions"];
+    const trackedStates = ['ремонт', 'изготовление']
     const updated = data.events[0]?.updatedFields;
     if (!updated || !updated.some(field => trackedFields.includes(field)))
       return;
@@ -27,9 +28,9 @@ export default class SkladService{
     const customerorderId = data.events[0].meta.href.split('/').pop()
     const order = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${customerorderId}?expand=state,agent,owner&limit=100`)
 
-    if(order.state.name != 'ремонт' && order.state.name != 'изготовление')
+    if(!trackedStates.includes(order.state.name))
       return
-
+    const isRepair = order.state.name === 'repair';
     const customerorder = await Tasks.findOne({where: { skladId: customerorderId}})
 
     if(!customerorder)
@@ -51,7 +52,9 @@ export default class SkladService{
       switch(point){
         case 'description': 
           diffMessages.push(`Старое описание: ${diff[point].oldValue}<br>Новое описание: ${diff[point].newValue}`)
-          json.description = `${diff[point].newValue}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
+          json.description = isRepair
+          ? `${diff[point].newValue  || 'Без описания'}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
+          : `${diff[point].newValue || 'Без описания'}`
         break
         case 'positions':
           let subtasks = []
