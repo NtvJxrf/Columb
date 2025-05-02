@@ -104,7 +104,7 @@ const createOrder = async (createdOrder, type) => {
       ? '900fba52-90fd-40c0-8305-f00940882239'
       : '1e80a566-a300-46b8-a066-2a0c0b16880f',
   };
-  if(createOrder.positions)
+  if(createdOrder.positions)
     yougileBody.subtasks = await createSubTasks(
       createdOrder.positions.rows.map(el => `${el.assortment.name} ${el.quantity}шт`),
       ownerId
