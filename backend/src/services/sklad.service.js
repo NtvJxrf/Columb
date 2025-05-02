@@ -16,41 +16,77 @@ export default class SkladService{
     })
     return taskId
   }
-  
-   static async updateHook(data){
+
+
+  static async updateHook(data){
+    const trackedFields = ["description", "positions"];
+    const updated = data.events[0]?.updatedFields;
+    if (!updated || !updated.some(field => trackedFields.includes(field)))
+      return;
+
     const customerorderId = data.events[0].meta.href.split('/').pop()
     const order = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${customerorderId}?expand=state,agent,owner&limit=100`)
+
     if(order.state.name != 'ремонт' && order.state.name != 'изготовление')
       return
+
     const customerorder = await Tasks.findOne({where: { skladId: customerorderId}})
-    if(!customerorder) return await SkladService.createHook(customerorderId)
+
+    if(!customerorder)
+      return await SkladService.createHook(customerorderId)
+
     const audit = await Client.sklad(data.auditContext.meta.href + '/events')
     const ownerId = process.env[order.owner.id.replace(/-/g, '_')];
-    const headers = {
-      Authorization: `Bearer ${ownerId}`
-    }
-    const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'get', {
-      headers,
-    })
+    const headers = { Authorization: `Bearer ${ownerId}`}
+    const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'get', { headers })
     let subtasks = []
     if(data.events[0]?.updatedFields?.includes('positions') && task.subtasks?.length){
-      subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', {headers})))
+      subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', { headers })))
     }
-    const diffMessages = [`Изменения заказа<br><br>`]
+    const diffMessages = [`Изменения заказа<br><br><br>`]
     const diff = audit.rows[0].diff
-    await createDiff(diff, task, subtasks, diffMessages, ownerId, order)
+    const json = {}
+
+    for(const point of Object.keys(diff)){
+      switch(point){
+        case 'description': 
+          diffMessages.push(`Старое описание: ${diff[point].oldValue}<br>Новое описание: ${diff[point].newValue}`)
+          json.description = `${diff[point].newValue}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
+        break
+        case 'positions':
+          let subtasks = []
+          if(task.subtasks)
+            subtasks = await Promise.all(task.subtasks.map(el => Client.yougile(`https://ru.yougile.com/api-v2/tasks/${el}`, 'get', {headers})))
+          for(const position of diff[point]){
+            if(position.oldValue && position.newValue){
+              diffMessages.push(`<br><br>Позиция обновлена с: ${position.oldValue.assortment.name} ${position.oldValue.quantity}шт<br>На: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
+              subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
+              const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
+              subtasks.push(...newTaskId)
+            }else if(position.oldValue && !position.newValue){
+              diffMessages.push(`<br><br>Позиция удалена: ${position.oldValue.assortment.name}`)
+              subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
+            }else if(!position.oldValue && position.newValue){
+              diffMessages.push(`<br><br>Добавлена новая позиция: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
+              const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
+              subtasks.push(...newTaskId)
+            }
+          }
+          json.subtasks = subtasks.map( el => {
+            if(typeof el === 'object')
+              return el.id
+            return el
+          })
+        break
+      }
+    }
+
+
     const response = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'put', {
       headers,
-      json: {
-        description: task.description,
-        subtasks: subtasks.map( el => {
-          if(typeof el === 'object')
-            return el.id
-          return el
-        })
-      }
+      json
     })
-    if(diffMessages.length ===1 ) return 
+    if(diffMessages.length === 1 ) return 
     const chatMessage = diffMessages.join('')
     await Client.yougile(`https://ru.yougile.com/api-v2/chats/${response.id}/messages`, 'post', {
       headers,
@@ -60,34 +96,7 @@ export default class SkladService{
         textHtml: chatMessage
       }
     })
-   }
-}
-const createDiff = async (diff, task, subtasks, diffMessages, ownerId, order) => {
-  for(const point of Object.keys(diff)){
-    switch(point){
-      case 'description': 
-        diffMessages.push(`Старое описание: ${diff[point].oldValue}<br>Новое описание: ${diff[point].newValue}`)
-        task.description = `${diff[point].newValue}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
-      break
-      case 'positions': 
-        for(const position of diff[point]){
-          if(position.oldValue && position.newValue){
-            diffMessages.push(`<br><br>Позиция обновлена с: ${position.oldValue.assortment.name} ${position.oldValue.quantity}шт<br>На: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
-            subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
-            const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
-            subtasks.push(...newTaskId)
-          }else if(position.oldValue && !position.newValue){
-            diffMessages.push(`<br><br>Позиция удалена: ${position.oldValue.assortment.name}`)
-            subtasks = subtasks.filter(el => el.title != `${position.oldValue.assortment.name} ${position.oldValue.quantity}шт`)
-          }else if(!position.oldValue && position.newValue){
-            diffMessages.push(`<br><br>Добавлена новая позиция: ${position.newValue.assortment.name} ${position.newValue.quantity}шт`)
-            const newTaskId = await createSubTasks([`${position.newValue.assortment.name} ${position.newValue.quantity}шт`], ownerId)
-            subtasks.push(...newTaskId)
-          }
-        }
-      break
-    }
-  }
+  }   
 }
 const createOrder = async (createdOrder, type) => {
   const isRepair = type === 'repair';
