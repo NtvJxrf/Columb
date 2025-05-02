@@ -29,6 +29,7 @@ function Sidebar() {
   const role = localStorage.getItem("role")
   if (role === 'admin') {
     items.push(getItem(<Link to="/admin">Админка</Link>, "4"));
+    items.push(getItem(<Link to="/logs">Логи</Link>, "6"));
   }
 
   const handleLogout = async () => {

@@ -6,6 +6,7 @@ import CalcsLayout from './CalcsLayout'
 import ProtectedRoute from '../components/ProtectedRoute'
 import AdminPage from "../pages/AdminPage";
 import OzonPage from '../pages/OzonPage'
+import LogsPage from '../pages/LogsPage'
 const { Content } = Layout;
 
 
@@ -30,6 +31,14 @@ function MainLayout() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <AdminPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/logs" 
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <LogsPage />
               </ProtectedRoute>
             } 
           />

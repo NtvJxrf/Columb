@@ -38,18 +38,33 @@ const OzonPage = () => {
           setLoading(false);
         }
     };
+    const handleUpdateAll = async () => {
+      setLoading(true);
+        try{
+          const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/ozon/updateAll`, { withCredentials: true })
+          if(res.status === 200){
+            messageApi.success('Товары обновлены')
+            getProducts()
+          }
+        }catch(error){
+          console.error(error)
+          messageApi.error('Ошибка при обновлении товаров')
+        }finally{
+          setLoading(false);
+        }
+    };
 
     const handleNullAll = async () => {
       setLoading(true);
         try{
           const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/ozon/nullAll`, { withCredentials: true })
           if(res.status === 200){
-            messageApi.success('Товары добавлен')
+            messageApi.success('Товары обнулены')
             getProducts()
           }
         }catch(error){
           console.error(error)
-          messageApi.error('Ошибка при добавлении товаров')
+          messageApi.error('Ошибка при обнулении товаров')
         }finally{
           setLoading(false);
         }
@@ -163,6 +178,20 @@ const OzonPage = () => {
             sorter: (a, b) => a.code.localeCompare(b.code),
         }, getColumnSearchProps('code')),
         Object.assign({
+          title: 'sku',
+          dataIndex: 'sku',
+          width: '15%',
+          key: 'sku',
+          sorter: (a, b) => a.code.localeCompare(b.code),
+      }, getColumnSearchProps('sku')),
+        Object.assign({
+          title: 'product_id',
+          dataIndex: 'productId',
+          width: '15%',
+          key: 'productId',
+          sorter: (a, b) => a.code.localeCompare(b.code),
+      }, getColumnSearchProps('productId')),
+        Object.assign({
             title: 'Обновлять',
             dataIndex: 'updateIt',
             width: '5%',
@@ -222,7 +251,8 @@ const OzonPage = () => {
             
                 <Space style={{ marginTop: 16 }}>
                     <Button onClick={handleSyncAll} loading={loading}>Синхронизировать все</Button>
-                    <Button onClick={handleNullAll} loading={loading}>Обнулить все остатки на Ozon</Button>
+                    <Button onClick={handleNullAll} loading={loading} danger>Обнулить все остатки на Ozon</Button>
+                    <Button onClick={handleUpdateAll} loading={loading}>Обновить все остатки на Ozon</Button>
                 </Space>
             </Card>
             <Flex gap="middle" vertical>
