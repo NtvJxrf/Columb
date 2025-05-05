@@ -30,7 +30,7 @@ export default class SkladService{
     const customerorder = await Tasks.findOne({ where: { skladId: id } })
 
     if(!customerorder) return await SkladService.createHook(id)
-    const ownerId = process.env[order.owner.id.replace(/-/g, '_')];
+    const ownerId = process.env[audit.uid.replace('@', '_')];
     const headers = { Authorization: `Bearer ${ownerId}`}
     const task = await Client.yougile(`https://ru.yougile.com/api-v2/tasks/${customerorder.yougileId}`, 'get', { headers })
     const isRepair = repairColumnsIds[task.columnId]
@@ -139,7 +139,7 @@ export default class SkladService{
   }   
 }
 const createOrder = async (createdOrder, isRepair) => {
-  const ownerId = process.env[createdOrder.owner.id.replace(/-/g, '_')];
+  const ownerId = process.env[createdOrder.owner.uid.replace('@', '_')];
 
   const yougileBody = {
     title: formatTitle(isRepair, createdOrder),
