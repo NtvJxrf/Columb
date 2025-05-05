@@ -2,13 +2,18 @@ import TokenService from '../services/token.service.js';
 import ApiError from '../utils/apiError.js';
 import logger from '../utils/logger.js'
 import ipRangeCheck from 'ip-range-check'
-const ozonIps = ['195.34.21.0/24', '185.73.192.0/22', '91.223.93.0/24']
+export const trustedIps = [ '195.34.21.0/24', '185.73.192.0/22', '91.223.93.0/24', //ozon
+
+                            '23.105.238.220',                                      //sklad
+
+                            '176.99.3.97','46.183.165.32','89.108.74.109','89.108.90.101',//yougile
+                            '89.108.94.5','89.108.95.229','89.108.108.97','89.108.108.253',//yougile
+                            '89.108.118.205','89.108.120.32','89.108.120.189','89.108.125.79',//yougile
+                            '89.108.125.159','89.108.127.199', '89.108.94.215'//yougile
+]
 const authMiddleware = async (req, res, next) => {
-    if (ipRangeCheck(req.ip, ozonIps)) {
+    if (ipRangeCheck(req.ip, trustedIps)) {
         return next();
-    }
-    if(req.query.token === process.env.ApiToken){
-        return next()
     }
     try {
         const accessToken = req.cookies.accessToken

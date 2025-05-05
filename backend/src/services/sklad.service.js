@@ -3,11 +3,9 @@ import Tasks from '../databases/models/yougile/tasks.model.js'
 export default class SkladService{
   static async createHook(id) {
     const createdOrder = await Client.sklad(`https://api.moysklad.ru/api/remap/1.2/entity/customerorder/${id}?expand=project,agent,state,positions.assortment,owner&limit=100`);
-    let type = null
     if(createdOrder.state.name != 'ремонт' && createdOrder.state.name != 'изготовление')
       return
-    type = createdOrder.state.name === 'ремонт' ? 'repair' : 'neworder'
-    const taskId = await createOrder(createdOrder, type)
+    const taskId = await createOrder(createdOrder, createdOrder.state.name === 'ремонт')
     await Tasks.create({
       skladId: id,
       yougileId: taskId
@@ -140,8 +138,7 @@ export default class SkladService{
     return response
   }   
 }
-const createOrder = async (createdOrder, type) => {
-  const isRepair = type === 'repair';
+const createOrder = async (createdOrder, isRepair) => {
   const ownerId = process.env[createdOrder.owner.id.replace(/-/g, '_')];
 
   const yougileBody = {
