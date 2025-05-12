@@ -143,7 +143,7 @@ const createOrder = async (createdOrder, isRepair) => {
 
   const yougileBody = {
     title: formatTitle(isRepair, createdOrder),
-    description: formatDescription(createdOrder, isRepair).replaceAll('\n', '<br>'),
+    description: formatDescription(createdOrder, isRepair),
     stopwatch: { running: true },
     stickers: {},
     columnId: isRepair
@@ -346,5 +346,5 @@ const formatPositionTitle = (position) => `${position.assortment.name} ${positio
 const formatTitle = (isRepair, order) => `${(isRepair ? order?.project?.name : order.name)|| 'Без номера'}, ${new Date(new Date(order.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${order?.attributes.find(el => el?.name == 'Название')?.value || 'Без названия'}`
 const formatDeadline = (date) => Math.round(new Date(date).getTime())
 const formatDescription = (order, isRepair) => isRepair
-  ? `${order.description || 'Без описания'}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
-  : `${order.description || 'Без описания'}`
+  ? `${order.description.replaceAll('\n', '<br>') || 'Без описания'}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
+  : `${order.description.replaceAll('\n', '<br>') || 'Без описания'}`
