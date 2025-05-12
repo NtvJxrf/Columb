@@ -143,7 +143,7 @@ const createOrder = async (createdOrder, isRepair) => {
 
   const yougileBody = {
     title: formatTitle(isRepair, createdOrder),
-    description: formatDescription(createdOrder, isRepair),
+    description: formatDescription(createdOrder, isRepair).replaceAll('\n', '<br>'),
     stopwatch: { running: true },
     stickers: {},
     columnId: isRepair
