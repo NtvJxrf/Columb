@@ -1,0 +1,26 @@
+
+name: Deploy Node.js app
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup SSH access
+      uses: webfactory/ssh-agent@v0.5.4
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Deploy to server
+      run: |
+        ssh -o StrictHostKeyChecking=no root@${{ secrets.HOST }} << EOF
+          cd /root/Columb
+          git pull origin main
+          cd backend/src
+          npm install
+          pm2 restart server.js
+        EOF
