@@ -21,7 +21,7 @@ export default class SkladService{
 
     if(!trackedEvents.includes(audit.eventType)) return
 
-    const trackedFields = ["description", "positions", 'Название', 'project', 'deliveryPlannedMoment', 'status']
+    const trackedFields = ["description", "positions", 'Название', 'project', 'deliveryPlannedMoment', 'state']
     const updatedFields = Object.keys(audit.diff)
     if(!trackedFields.some(field => updatedFields.includes(field))) return 
 
