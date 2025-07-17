@@ -6,7 +6,7 @@ frontend/node_modules/
 test.js
 create-user.js
 todo
-
+.github
 # Build
 frontend/build/
 backend/dist/
