@@ -342,9 +342,9 @@ const createSubTasks = async (positions, owner) => {
   return ids.map(el => el.id)
 }
 
-const formatPositionTitle = (position) => `${position.assortment.name} ${position.quantity}шт`;
+const formatPositionTitle = (position) => `${position?.assortment?.name} ${position?.quantity}шт`;
 const formatTitle = (isRepair, order) => `${(isRepair ? order?.project?.name : order.name)|| 'Без номера'}, ${new Date(new Date(order.created).getTime() + 7200000).toLocaleString("ru-RU").slice(0, 17)}, ${order?.attributes.find(el => el?.name == 'Название')?.value || 'Без названия'}`
 const formatDeadline = (date) => Math.round(new Date(date).getTime())
 const formatDescription = (order, isRepair) => isRepair
-  ? `${order.description.replace(/\n/g, '<br>') || 'Без описания'}<br><br><br>ФИО: ${order.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order.agent?.phone || 'Без номера телефона'}">${order.agent.phone}</a>`
-  : `${order.description.replace(/\n/g, '<br>') || 'Без описания'}`
+  ? `${order?.description?.replace(/\n/g, '<br>') || 'Без описания'}<br><br><br>ФИО: ${order?.agent?.name || 'Без имени'}<br>Телефон: <a href="tel:+${order?.agent?.phone || 'Без номера телефона'}">${order?.agent?.phone}</a>`
+  : `${order?.description?.replace(/\n/g, '<br>') || 'Без описания'}`
